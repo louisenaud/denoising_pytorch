@@ -16,8 +16,8 @@ def proximal_linf_ball(p, r=1.0):
     :param r: float, radius of infinity norm ball.
     :return: numpy array, same dimensions as p
     """
-    m1 = torch.max(torch.add(p.data, - r), torch.zeros(p.size()))
-    m2 = torch.max(torch.add(torch.neg(p.data), - r), torch.zeros(p.size()))
+    m1 = torch.max(torch.add(p.data, - r), torch.zeros(p.size()).cuda())
+    m2 = torch.max(torch.add(torch.neg(p.data), - r), torch.zeros(p.size()).cuda())
 
     return p - Variable(m1 - m2)
 
