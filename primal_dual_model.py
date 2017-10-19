@@ -25,6 +25,21 @@ class ForwardGradient(nn.Module):
         return gradient
 
 
+class ForwardWeightedGradient(nn.Module):
+    def __init__(self):
+        super(ForwardWeightedGradient, self).__init__()
+
+    def forward(self, x, w, dtype=torch.FloatTensor):
+        im_size = x.size()
+        gradient = Variable(torch.zeros((2, im_size[1], im_size[2])).type(dtype)).cuda()  # Allocate gradient array
+        # Horizontal direction
+        gradient[0, :, :-1] = x[0, :, 1:] - x[0, :, :-1]
+        # Vertical direction
+        gradient[1, :-1, :] = x[0, 1:, :] - x[0, :-1, :]
+        gradient = gradient * w
+        return gradient
+
+
 class BackwardDivergence(nn.Module):
     def __init__(self):
         super(BackwardDivergence, self).__init__()
@@ -120,17 +135,32 @@ class DualUpdate(nn.Module):
         return y
 
 
+class DualWeightedUpdate(nn.Module):
+    def __init__(self, sigma):
+        super(DualWeightedUpdate, self).__init__()
+        self.forward_grad = ForwardWeightedGradient()
+        self.sigma = sigma
+
+    def forward(self, x_tilde, y, w):
+        if y.is_cuda:
+            y = y + self.sigma * self.forward_grad.forward(x_tilde, w, dtype=torch.cuda.FloatTensor)
+        else:
+            y = y + self.sigma * self.forward_grad.forward(x_tilde, w, dtype=torch.FloatTensor)
+        return y
+
+
 class PrimalDualNetwork(nn.Module):
     def __init__(self, max_it=20, lambda_rof=7.0, sigma=1. / (7.0 * 0.01), tau=0.01, theta=0.5):
         super(PrimalDualNetwork, self).__init__()
         self.max_it = max_it
-        self.dual_update = DualUpdate(sigma)
+        self.dual_update = DualWeightedUpdate(sigma)
         self.prox_l_inf = ProximalLinfBall()
         self.primal_update = PrimalUpdate(lambda_rof, tau)
         self.primal_reg = PrimalRegularization(theta)
 
         self.energy_primal = PrimalEnergyROF()
         self.energy_dual = 0.0
+        self.w = nn.Parameter()
         # self.x = img_obs.clone()
         # img_size = img_obs.size()
         # self.y = Variable(torch.zeros((img_size[0]+1, img_size[1], img_size[2]))).cuda()
@@ -142,9 +172,11 @@ class PrimalDualNetwork(nn.Module):
         img_size = img_obs.size()
         x_old = x.clone().cuda()
         y = Variable(torch.zeros((img_size[0] + 1, img_size[1], img_size[2]))).cuda()
+        self.w.data = torch.ones(y.size())
+
         for it in range(self.max_it):
             # Dual update
-            y = self.dual_update.forward(x_tilde, y)
+            y = self.dual_update.forward(x_tilde, y, self.w.cuda())
             y = self.prox_l_inf.forward(y, 1.0)
             # Primal update
             x_old = x

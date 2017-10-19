@@ -157,20 +157,20 @@ if __name__ == '__main__':
     primal[0] = p_nrg.data[0]
     #dual[0] = d_nrg.data[0]
     y = forward_gradient(x, dtype=torch.cuda.FloatTensor)
-    for it in range(max_it):
-        # Dual update
-        y = y + sigma * forward_gradient(x_tilde, dtype=torch.cuda.FloatTensor)
-        y = proximal_linf_ball(y, 1.0)
-        # Primal update
-        x_old = x
-        x = (x + tau * backward_divergence(y, dtype=torch.cuda.FloatTensor) + lambda_rof * tau * img_obs) / (1.0 + lambda_rof * tau)
-        # Smoothing
-        x_tilde = x + theta * (x - x_old)
-
-        # Compute energies
-        primal[it] = primal_energy_rof(x_tilde, img_obs, sigma).data[0]
-        dual[it] = dual_energy_rof(y, img_obs).data[0]
-        gap[it] = primal[it] - dual[it]
+    # for it in range(max_it):
+    #     # Dual update
+    #     y = y + sigma * forward_gradient(x_tilde, dtype=torch.cuda.FloatTensor)
+    #     y = proximal_linf_ball(y, 1.0)
+    #     # Primal update
+    #     x_old = x
+    #     x = (x + tau * backward_divergence(y, dtype=torch.cuda.FloatTensor) + lambda_rof * tau * img_obs) / (1.0 + lambda_rof * tau)
+    #     # Smoothing
+    #     x_tilde = x + theta * (x - x_old)
+    #
+    #     # Compute energies
+    #     primal[it] = primal_energy_rof(x_tilde, img_obs, sigma).data[0]
+    #     dual[it] = dual_energy_rof(y, img_obs).data[0]
+    #     gap[it] = primal[it] - dual[it]
     t1 = time.time()
     print("Elapsed time :", t1 - t0, "s")
     # plt.figure()
@@ -196,28 +196,48 @@ if __name__ == '__main__':
 
     # Net approach
     net = PrimalDualNetwork()
+    criterion = torch.nn.MSELoss(size_average=False)
     dn_image = net.forward(x)
+
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-4)
+    for t in range(10):
+        # Forward pass: Compute predicted y by passing x to the model
+        x_pred = net(x)
+
+        # Compute and print loss
+        loss = criterion(x_pred, img_ref)
+        print(t, loss.data[0])
+
+        # Zero gradients, perform a backward pass, and update the weights.
+        optimizer.zero_grad()
+        #loss.backward()
+        optimizer.step()
+
+
     f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex='col', sharey='row')
     ax1.imshow(tensor2pil(img_ref.data.cpu()))
     ax1.set_title("Reference image")
     ax2.imshow(tensor2pil(img_obs.data.cpu()))
     ax2.set_title("Observed image")
-    ax3.imshow(tensor2pil(dn_image.data.cpu()))
+    ax3.imshow(tensor2pil(x_pred.data.cpu()))
     ax3.set_title("Denoised image")
     plt.show()
-# RNN for primal dual
-data = data_set_patches.construct_patches(img_)
-mean = [np.mean(data)]
-std = [np.std(data)]
-data.reshape(len(data), 8, 8)
-normalize = transforms.Normalize(mean=mean, std=std)
-preprocess = transforms.Compose([
-   transforms.ToTensor(),
-   normalize
-])
-trainset = torchvision.datasets.CIFAR10('./data', train=True, transform=preprocess, target_transform=None, download=True)
 
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=4, shuffle=True, num_workers=2)
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+
+# # RNN for primal dual
+# data = data_set_patches.construct_patches(img_)
+# mean = [np.mean(data)]
+# std = [np.std(data)]
+# data.reshape(len(data), 8, 8)
+# normalize = transforms.Normalize(mean=mean, std=std)
+# preprocess = transforms.Compose([
+#    transforms.ToTensor(),
+#    normalize
+# ])
+# trainset = torchvision.datasets.CIFAR10('./data', train=True, transform=preprocess, target_transform=None, download=True)
+#
+# trainloader = torch.utils.data.DataLoader(trainset, batch_size=4, shuffle=True, num_workers=2)
+#
+# criterion = nn.CrossEntropyLoss()
+# optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
