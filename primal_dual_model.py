@@ -150,7 +150,7 @@ class DualWeightedUpdate(nn.Module):
 
 
 class PrimalDualNetwork(nn.Module):
-    def __init__(self, max_it=20, lambda_rof=7.0, sigma=1. / (7.0 * 0.01), tau=0.01, theta=0.5):
+    def __init__(self, w, max_it=20, lambda_rof=7.0, sigma=1. / (7.0 * 0.01), tau=0.01, theta=0.5):
         super(PrimalDualNetwork, self).__init__()
         self.max_it = max_it
         self.dual_update = DualWeightedUpdate(sigma)
@@ -160,11 +160,7 @@ class PrimalDualNetwork(nn.Module):
 
         self.energy_primal = PrimalEnergyROF()
         self.energy_dual = 0.0
-        self.w = nn.Parameter()
-        # self.x = img_obs.clone()
-        # img_size = img_obs.size()
-        # self.y = Variable(torch.zeros((img_size[0]+1, img_size[1], img_size[2]))).cuda()
-        # self.x_tilde = img_obs.clone()
+        self.w = w
 
     def forward(self, img_obs):
         x = img_obs.clone().cuda()
@@ -172,7 +168,6 @@ class PrimalDualNetwork(nn.Module):
         img_size = img_obs.size()
         x_old = x.clone().cuda()
         y = Variable(torch.zeros((img_size[0] + 1, img_size[1], img_size[2]))).cuda()
-        self.w.data = torch.ones(y.size())
 
         for it in range(self.max_it):
             # Dual update
@@ -191,8 +186,18 @@ class PrimalEnergyROF(nn.Module):
     def __init__(self):
         super(PrimalEnergyROF, self).__init__()
 
-    def forward(self):
-        return
+    def forward(self, x, img_obs, clambda):
+        """
+
+        :param x: pytorch Variables, [MxN]
+        :param img_obs: pytorch Variable [MxN], observed image
+        :param clambda: float, lambda parameter
+        :return: float, primal ROF energy
+        """
+        g = ForwardWeightedGradient()
+        energy_reg = torch.sum(torch.norm(g.forward(x, torch.cuda.FloatTensor), 1))
+        energy_data_term = torch.sum(0.5 * clambda * torch.norm(x - img_obs, 2))
+        return energy_reg + energy_data_term
 
 
 class DualEnergyROF(nn.Module):
@@ -201,3 +206,8 @@ class DualEnergyROF(nn.Module):
 
     def forward(self):
         return
+
+
+class PrimalDualGap(nn.Module):
+    def __init__(self):
+        super(PrimalDualGap, self).__init__()

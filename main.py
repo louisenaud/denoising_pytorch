@@ -22,12 +22,23 @@ import torchvision.models as models
 import torchvision
 
 from scipy.misc import face
+from skimage import data, img_as_float
+from skimage.color import rgb2gray
+from skimage.util import random_noise
 
 from differential_operators import backward_divergence, forward_gradient
 from proximal_operators import proximal_linf_ball
 from primal_dual_model import PrimalDualNetwork
 
 import data_set_patches
+
+
+def penalization(x):
+    return torch.max(x, 0.)
+
+
+def margin(x1, x2):
+    return torch.norm(x1 - x2, 2)
 
 def dual_energy_tvl1(y, im_obs):
     """
@@ -123,14 +134,20 @@ imshow(content.data)
 if __name__ == '__main__':
     pil2tensor = transforms.ToTensor()
     tensor2pil = transforms.ToPILImage()
+    sigma = 0.155
     t0 = time.time()
     # Create image to noise and denoise
-    img_ = face(True)
+    #img_ = face(True)
+    img_ = rgb2gray(data.astronaut())
     h, w = img_.shape
     img_.resize((h, w, 1))
     img_tensor = pil2tensor(img_.transpose(1, 0, 2)).cuda()
     img_ref = Variable(img_tensor)
-    img_obs = img_ref + Variable(torch.randn(img_ref.size()).cuda() * 0.1)
+    noise = Variable(img_ref.data.normal_(0.0, std=0.01))
+    img_obs = img_ref + noise
+    loader = transforms.Compose([
+        transforms.Scale(imsize),  # scale imported image
+        transforms.ToTensor()])  # transform it into a torch tensor
     # Parameters
     norm_l = 7.0
     max_it = 200
@@ -195,32 +212,54 @@ if __name__ == '__main__':
     # ax3.set_title("Denoised image")
 
     # Net approach
-    net = PrimalDualNetwork()
+    w = nn.Parameter(torch.zeros(y.size()))
+    net = PrimalDualNetwork(w)
     criterion = torch.nn.MSELoss(size_average=False)
-    dn_image = net.forward(x)
-
     optimizer = torch.optim.SGD(net.parameters(), lr=1e-4)
-    for t in range(10):
-        # Forward pass: Compute predicted y by passing x to the model
-        x_pred = net(x)
 
+    for t in range(100):
+        # Forward pass: Compute predicted image by passing x to the model
+        x_pred = net(x)
         # Compute and print loss
         loss = criterion(x_pred, img_ref)
         print(t, loss.data[0])
 
         # Zero gradients, perform a backward pass, and update the weights.
+
         optimizer.zero_grad()
-        #loss.backward()
+        loss.backward()
         optimizer.step()
 
 
     f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex='col', sharey='row')
-    ax1.imshow(tensor2pil(img_ref.data.cpu()))
+    #ax1.imshow(tensor2pil(img_ref.data.cpu()))
+
+    ax1.imshow(rgb2gray(data.astronaut()))
     ax1.set_title("Reference image")
     ax2.imshow(tensor2pil(img_obs.data.cpu()))
     ax2.set_title("Observed image")
     ax3.imshow(tensor2pil(x_pred.data.cpu()))
     ax3.set_title("Denoised image")
+
+
+    im_test = img_as_float(rgb2gray(data.camera()))
+    print(im_test.shape)
+    h, w = im_test.shape
+    im_test.resize((h, w, 1))
+    im_obs = random_noise(im_test, var=0.001)
+    img_tensor = pil2tensor(im_test.transpose(1, 0, 2)).cuda()
+    img_ref = Variable(img_tensor)
+    img_obs = pil2tensor(im_obs.transpose(1, 0, 2)).cuda()
+    img_obs = Variable(img_obs)
+    img_dn = net.forward(img_obs)
+
+    f2, ((ax21, ax22), (ax23, ax24)) = plt.subplots(2, 2, sharex='col', sharey='row')
+    ax21.imshow(data.camera())
+    ax21.set_title("Reference image")
+    ax22.imshow(tensor2pil(img_obs.data.cpu()))
+    ax22.set_title("Observed image")
+    ax23.imshow(tensor2pil(img_dn.data.cpu()))
+    ax23.set_title("Denoised image")
     plt.show()
 
 
