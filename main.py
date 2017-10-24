@@ -123,28 +123,24 @@ assert style.size() == content.size(), "we need to import style and content imag
 
 # display
 unloader = transforms.ToPILImage()  # reconvert into PIL image
-fig = plt.figure()
-
-plt.subplot(221)
-imshow(style.data)
-plt.subplot(222)
-imshow(content.data)
-
 
 if __name__ == '__main__':
+    plt.gray()
     pil2tensor = transforms.ToTensor()
     tensor2pil = transforms.ToPILImage()
-    sigma = 0.155
+
+
     t0 = time.time()
     # Create image to noise and denoise
     #img_ = face(True)
-    img_ = rgb2gray(data.astronaut())
-    h, w = img_.shape
-    img_.resize((h, w, 1))
-    img_tensor = pil2tensor(img_.transpose(1, 0, 2)).cuda()
-    img_ref = Variable(img_tensor)
-    noise = Variable(img_ref.data.normal_(0.0, std=0.01))
+    sigma_n = 0.2
+    img_ = Image.open("images/image_Lena512.png")
+    h, w = img_.size
+    img_ref = Variable(pil2tensor(img_).cuda())
+    noise = torch.ones(img_ref.size())
+    noise = Variable(noise.normal_(0.0, sigma_n)).cuda()
     img_obs = img_ref + noise
+
     loader = transforms.Compose([
         transforms.Scale(imsize),  # scale imported image
         transforms.ToTensor()])  # transform it into a torch tensor
@@ -156,6 +152,7 @@ if __name__ == '__main__':
     sigma = 1.0 / (norm_l * tau)
     #lambda_TVL1 = 1.0
     lambda_rof = 7.0
+
 
     x = Variable(img_obs.data.clone()).cuda()
     x_tilde = Variable(img_obs.data.clone()).cuda()
@@ -216,14 +213,14 @@ if __name__ == '__main__':
     net = PrimalDualNetwork(w)
     criterion = torch.nn.MSELoss(size_average=False)
     optimizer = torch.optim.SGD(net.parameters(), lr=1e-4)
-
-    for t in range(100):
+    loss_history = []
+    for t in range(500):
         # Forward pass: Compute predicted image by passing x to the model
         x_pred = net(x)
         # Compute and print loss
         loss = criterion(x_pred, img_ref)
         print(t, loss.data[0])
-
+        loss_history.append(loss.data[0])
         # Zero gradients, perform a backward pass, and update the weights.
 
         optimizer.zero_grad()
@@ -234,7 +231,7 @@ if __name__ == '__main__':
     f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex='col', sharey='row')
     #ax1.imshow(tensor2pil(img_ref.data.cpu()))
 
-    ax1.imshow(rgb2gray(data.astronaut()))
+    ax1.imshow(img_obs.data.cpu().mul_(255).numpy().reshape(512, 512))
     ax1.set_title("Reference image")
     ax2.imshow(tensor2pil(img_obs.data.cpu()))
     ax2.set_title("Observed image")
@@ -242,24 +239,27 @@ if __name__ == '__main__':
     ax3.set_title("Denoised image")
 
 
-    im_test = img_as_float(rgb2gray(data.camera()))
-    print(im_test.shape)
-    h, w = im_test.shape
-    im_test.resize((h, w, 1))
-    im_obs = random_noise(im_test, var=0.001)
-    img_tensor = pil2tensor(im_test.transpose(1, 0, 2)).cuda()
-    img_ref = Variable(img_tensor)
-    img_obs = pil2tensor(im_obs.transpose(1, 0, 2)).cuda()
-    img_obs = Variable(img_obs)
-    img_dn = net.forward(img_obs)
+    # Test image
+    img_t = Image.open("images/image_Barbara512.png")
+    h, w = img_t.size
+    img_ref_t = Variable(pil2tensor(img_t).cuda())
+    noise = torch.ones(img_ref_t.size())
+    noise = Variable(noise.normal_(0.0, sigma_n)).cuda()
+    img_obs_t = img_ref_t + noise
+    img_dn = net.forward(img_obs_t)
 
     f2, ((ax21, ax22), (ax23, ax24)) = plt.subplots(2, 2, sharex='col', sharey='row')
-    ax21.imshow(data.camera())
+    ax21.imshow(img_t)
     ax21.set_title("Reference image")
-    ax22.imshow(tensor2pil(img_obs.data.cpu()))
+    ax22.imshow(img_obs_t.data.cpu().mul_(255).numpy().reshape(512, 512))
     ax22.set_title("Observed image")
-    ax23.imshow(tensor2pil(img_dn.data.cpu()))
+    ax23.imshow(img_dn.data.cpu().mul_(255).numpy().reshape(512, 512))
     ax23.set_title("Denoised image")
+
+    # Plot loss
+    plt.figure()
+    x = range(len(loss_history))
+    plt.plot(x, np.asarray(loss_history))
     plt.show()
 
 

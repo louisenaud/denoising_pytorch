@@ -204,10 +204,33 @@ class DualEnergyROF(nn.Module):
     def __init__(self):
         super(DualEnergyROF, self).__init__()
 
-    def forward(self):
-        return
+    def forward(self, y, im_obs):
+        """
+        Compute the dual energy of ROF problem.
+        :param y: pytorch Variable, [MxNx2]
+        :param im_obs: pytorch Variables [MxN], observed image
+        :return: float, dual energy
+        """
+        d = BackwardDivergence()
+        nrg = -0.5 * (im_obs - d.forward(y, torch.cuda.FloatTensor)) ** 2
+        nrg = torch.sum(nrg)
+        return nrg
 
 
 class PrimalDualGap(nn.Module):
     def __init__(self):
         super(PrimalDualGap, self).__init__()
+
+    def forward(self, x, y, im_obs, clambda):
+        """
+        Compute the primal dual gap.
+        :param x: pytorch Variable, [1xMxN]
+        :param y: pytorch Variable, [2xMxN]
+        :param im_obs: pytorch Variable, [1xMxN], observed image
+        :param clambda: float > 0
+        :return: float > 0
+        """
+        dual = DualEnergyROF()
+        primal = PrimalEnergyROF()
+        g = primal.forward(x, im_obs, clambda) - dual.forward(y, im_obs)
+        return g
