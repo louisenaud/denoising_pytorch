@@ -16,6 +16,12 @@ class ForwardGradient(nn.Module):
         super(ForwardGradient, self).__init__()
 
     def forward(self, x, dtype=torch.FloatTensor):
+        """
+        
+        :param x: 
+        :param dtype: 
+        :return: 
+        """
         im_size = x.size()
         gradient = Variable(torch.zeros((2, im_size[1], im_size[2])).type(dtype))  # Allocate gradient array
         # Horizontal direction
@@ -30,6 +36,13 @@ class ForwardWeightedGradient(nn.Module):
         super(ForwardWeightedGradient, self).__init__()
 
     def forward(self, x, w, dtype=torch.FloatTensor):
+        """
+        
+        :param x: 
+        :param w: 
+        :param dtype: 
+        :return: 
+        """
         im_size = x.size()
         gradient = Variable(torch.zeros((2, im_size[1], im_size[2])).type(dtype)).cuda()  # Allocate gradient array
         # Horizontal direction
@@ -45,6 +58,12 @@ class BackwardDivergence(nn.Module):
         super(BackwardDivergence, self).__init__()
 
     def forward(self, y, dtype=torch.FloatTensor):
+        """
+        
+        :param y: 
+        :param dtype: 
+        :return: 
+        """
         im_size = y.size()
         # Horizontal direction
         d_h = Variable(torch.zeros((1, im_size[1], im_size[2])).type(dtype))
@@ -68,6 +87,12 @@ class ProximalLinfBall(nn.Module):
         super(ProximalLinfBall, self).__init__()
 
     def forward(self, p, r):
+        """
+        
+        :param p: 
+        :param r: 
+        :return: 
+        """
         if p.is_cuda:
             m1 = torch.max(torch.add(p.data, - r), torch.zeros(p.size()).cuda())
             m2 = torch.max(torch.add(torch.neg(p.data), - r), torch.zeros(p.size()).cuda())
@@ -82,6 +107,13 @@ class ProximalL1(nn.Module):
         super(ProximalL1, self).__init__()
 
     def forward(self, x, f, clambda):
+        """
+        
+        :param x: 
+        :param f: 
+        :param clambda: 
+        :return: 
+        """
         if x.is_cuda:
             res = x + torch.clamp(f - x, -clambda, clambda).cuda()
         else:
@@ -99,6 +131,7 @@ class ProximalL2(nn.Module):
     def forward(self):
         return
 
+
 class PrimalUpdate(nn.Module):
     def __init__(self, lambda_rof, tau):
         super(PrimalUpdate, self).__init__()
@@ -107,9 +140,17 @@ class PrimalUpdate(nn.Module):
         self.lambda_rof = lambda_rof
 
     def forward(self, x, y, img_obs):
+        """
+        
+        :param x: 
+        :param y: 
+        :param img_obs: 
+        :return: 
+        """
         x = (x + self.tau * self.backward_div.forward(y, dtype=torch.cuda.FloatTensor) +
              self.lambda_rof * self.tau * img_obs) / (1.0 + self.lambda_rof * self.tau)
         return x
+
 
 class PrimalRegularization(nn.Module):
     def __init__(self, theta):
@@ -117,6 +158,13 @@ class PrimalRegularization(nn.Module):
         self.theta = theta
 
     def forward(self, x, x_tilde, x_old):
+        """
+        
+        :param x: 
+        :param x_tilde: 
+        :param x_old: 
+        :return: 
+        """
         x_tilde = x + self.theta * (x - x_old)
         return x_tilde
 
@@ -128,6 +176,12 @@ class DualUpdate(nn.Module):
         self.sigma = sigma
 
     def forward(self, x_tilde, y):
+        """
+        
+        :param x_tilde: 
+        :param y: 
+        :return: 
+        """
         if y.is_cuda:
             y = y + self.sigma * self.forward_grad.forward(x_tilde, dtype=torch.cuda.FloatTensor)
         else:
@@ -142,6 +196,13 @@ class DualWeightedUpdate(nn.Module):
         self.sigma = sigma
 
     def forward(self, x_tilde, y, w):
+        """
+        
+        :param x_tilde: 
+        :param y: 
+        :param w: 
+        :return: 
+        """
         if y.is_cuda:
             y = y + self.sigma * self.forward_grad.forward(x_tilde, w, dtype=torch.cuda.FloatTensor)
         else:
@@ -163,6 +224,11 @@ class PrimalDualNetwork(nn.Module):
         self.w = w
 
     def forward(self, img_obs):
+        """
+        
+        :param img_obs: 
+        :return: 
+        """
         x = img_obs.clone().cuda()
         x_tilde = img_obs.clone().cuda()
         img_size = img_obs.size()
@@ -234,3 +300,13 @@ class PrimalDualGap(nn.Module):
         primal = PrimalEnergyROF()
         g = primal.forward(x, im_obs, clambda) - dual.forward(y, im_obs)
         return g
+
+
+class MaxMarginLoss(nn.Module):
+    def __init__(self):
+        super(MaxMarginLoss, self).__init__()
+
+    def forward(self, x, H, b, w):
+        fg = ForwardWeightedGradient()
+        output = torch.transpose(x, 0, 1) * x + torch.transpose(b, 0, 1) * x + torch.sum(torch.norm(fg.forward(x, w), 1))
+        return output
