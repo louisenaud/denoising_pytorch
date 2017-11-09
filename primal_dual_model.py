@@ -82,6 +82,31 @@ class BackwardDivergence(nn.Module):
         return div
 
 
+class BackwardWeightedDivergence(nn.Module):
+    def __init__(self):
+        super(BackwardWeightedDivergence, self).__init__()
+
+    def forward(self, y, w, dtype=torch.cuda.FloatTensor):
+
+        im_size = y.size()
+        y_w = w * y
+        # Horizontal direction
+        d_h = Variable(torch.zeros((1, im_size[1], im_size[2])).type(dtype))
+        d_h[0, :, 0] = y_w[0, :, 0]
+        d_h[0, :, 1:-1] = y_w[0, :, 1:-1] - y_w[0, :, :-2]
+        d_h[0, :, -1] = -y_w[0, :, -2:-1]
+
+        # Vertical direction
+        d_v = Variable(torch.zeros((1, im_size[1], im_size[2])).type(dtype))
+        d_v[0, 0, :] = y_w[1, 0, :]
+        d_v[0, 1:-1, :] = y_w[1, 1:-1, :] - y_w[1, :-2, :]
+        d_v[0, -1, :] = -y_w[1, -2:-1, :]
+
+        # Divergence
+        div = d_h + d_v
+        return div
+
+
 class ProximalLinfBall(nn.Module):
     def __init__(self):
         super(ProximalLinfBall, self).__init__()
@@ -152,6 +177,27 @@ class PrimalUpdate(nn.Module):
         return x
 
 
+class PrimalWeightedUpdate(nn.Module):
+    def __init__(self, lambda_rof, tau):
+        super(PrimalWeightedUpdate, self).__init__()
+        self.backward_div = BackwardWeightedDivergence()
+        self.tau = tau
+        self.lambda_rof = lambda_rof
+
+    def forward(self, x, y, img_obs, w):
+        """
+
+        :param x:
+        :param y:
+        :param img_obs:
+        :param w:
+        :return:
+        """
+        x = (x + self.tau * self.backward_div.forward(y, w, dtype=torch.cuda.FloatTensor) +
+             self.lambda_rof * self.tau * img_obs) / (1.0 + self.lambda_rof * self.tau)
+        return x
+
+
 class PrimalRegularization(nn.Module):
     def __init__(self, theta):
         super(PrimalRegularization, self).__init__()
@@ -216,7 +262,7 @@ class PrimalDualNetwork(nn.Module):
         self.max_it = max_it
         self.dual_update = DualWeightedUpdate(sigma)
         self.prox_l_inf = ProximalLinfBall()
-        self.primal_update = PrimalUpdate(lambda_rof, tau)
+        self.primal_update = PrimalWeightedUpdate(lambda_rof, tau)
         self.primal_reg = PrimalRegularization(theta)
 
         self.energy_primal = PrimalEnergyROF()
@@ -233,7 +279,7 @@ class PrimalDualNetwork(nn.Module):
         x_tilde = img_obs.clone().cuda()
         img_size = img_obs.size()
         x_old = x.clone().cuda()
-        y = Variable(torch.zeros((img_size[0] + 1, img_size[1], img_size[2]))).cuda()
+        y = Variable(torch.rand((img_size[0] + 1, img_size[1], img_size[2]))).cuda()
 
         for it in range(self.max_it):
             # Dual update
@@ -241,7 +287,7 @@ class PrimalDualNetwork(nn.Module):
             y = self.prox_l_inf.forward(y, 1.0)
             # Primal update
             x_old = x
-            x = self.primal_update.forward(x, y, img_obs)
+            x = self.primal_update.forward(x, y, img_obs, self.w.cuda())
             # Smoothing
             x_tilde = self.primal_reg.forward(x, x_tilde, x_old)
 
